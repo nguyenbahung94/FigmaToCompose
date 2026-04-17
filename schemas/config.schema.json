@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "figma-to-compose project config",
+  "version": "1.0",
+  "type": "object",
+  "required": ["platform", "schema_version", "mapping_version", "plugin_version"],
+  "properties": {
+    "platform": {
+      "type": "string",
+      "enum": ["android", "ios"],
+      "description": "Target platform for code generation"
+    },
+    "schema_version": {
+      "type": "string",
+      "description": "Schema version this config targets (e.g. '1.0')"
+    },
+    "mapping_version": {
+      "type": "string",
+      "description": "Version of token/component mapping schema (e.g. '1.0')"
+    },
+    "plugin_version": {
+      "type": "string",
+      "description": "Plugin version this config was generated for (e.g. '1.x')"
+    },
+    "autonomy_phase": {
+      "type": "integer",
+      "enum": [1, 2, 3],
+      "default": 1,
+      "description": "Autonomy level: 1=Manual (default), 2=Assisted, 3=Autonomous. See spec §15."
+    },
+    "colors_source": {
+      "type": "string",
+      "description": "Android: relative path to colors.xml. iOS: Asset Catalog name."
+    },
+    "typography_class": {
+      "type": "string",
+      "description": "Android: fully qualified class for typography tokens (e.g. 'com.example.AppTypography')"
+    },
+    "compose_package": {
+      "type": "string",
+      "description": "Android: Java/Kotlin package name for generated Compose files (e.g. 'com.example.presentation'). Plugin resolves to path by replacing '.' with '/' and prepending source root."
+    }
+  }
+}
