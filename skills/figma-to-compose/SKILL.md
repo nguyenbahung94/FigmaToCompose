@@ -87,8 +87,29 @@ Run: grep -r "@Composable" <compose_source_dir> --include="*.kt" -l
      (compose_source_dir = resolved from config.json "compose_package" → e.g. src/main/java/)
 For each file found:
   Extract: function name, full parameter list, parameter types
-  Filter: only public/internal @Composable functions (skip private)
   Store: { name, signature, file_path }
+```
+
+**Component filter rules (applied after extraction):**
+```
+INCLUDE:
+  - public or internal visibility
+  - Has @Composable annotation
+  - Has ≥ 2 parameters
+  - Name does NOT end with "Preview"
+
+EXCLUDE:
+  - @Preview annotated functions
+  - private functions
+  - Functions with < 2 params (likely helpers or wrappers)
+  - Functions in files named *Preview*.kt
+```
+
+**AI matching score (Step 3):**
+```
+score = 0.5 * name_similarity + 0.3 * param_similarity + 0.2 * usage_frequency
+Accept ONLY if score ≥ 0.70. Otherwise → mark as "unmapped", needs_review: true.
+NEVER accept a candidate present in the entry's rejected_candidates list (score forced = 0).
 ```
 
 ### Step 2 — Get Figma component suggestions
