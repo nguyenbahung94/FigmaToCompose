@@ -1,0 +1,7 @@
+.DS_Store
+*.local.json
+*.log
+.idea/
+.vscode/
+node_modules/
+*.swp
