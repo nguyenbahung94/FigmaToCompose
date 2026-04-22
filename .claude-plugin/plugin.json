@@ -1,0 +1,20 @@
+{
+  "name": "figma-to-compose",
+  "version": "1.0.0",
+  "description": "Figma → Jetpack Compose pipeline. Design System as source of truth.",
+  "author": {
+    "name": "bahung-nguyen",
+    "url": "https://github.com/bahung-nguyen"
+  },
+  "homepage": "https://github.com/bahung-nguyen/figma-to-compose",
+  "repository": "https://github.com/bahung-nguyen/figma-to-compose",
+  "license": "MIT",
+  "keywords": [
+    "figma",
+    "jetpack-compose",
+    "android",
+    "design-system",
+    "codegen",
+    "design-tokens"
+  ]
+}

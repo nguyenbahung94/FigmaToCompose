@@ -19,9 +19,14 @@ If Figma uses a component not in your component mapping → FallbackLevel determ
 
 ## Install
 
+Clone into your Claude Code plugins directory:
+
 ```bash
-claude install figma-to-compose
+git clone https://github.com/bahung-nguyen/figma-to-compose.git \
+  ~/.claude/plugins/figma-to-compose
 ```
+
+Or clone anywhere and add the path to your Claude Code settings. Restart Claude Code after install so the `/figma-to-compose` command and skills are discovered.
 
 ## Quick Start
 
