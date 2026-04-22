@@ -3,11 +3,11 @@
   "version": "1.0.0",
   "description": "Figma → Jetpack Compose pipeline. Design System as source of truth.",
   "author": {
-    "name": "bahung-nguyen",
-    "url": "https://github.com/bahung-nguyen"
+    "name": "nguyenbahung94",
+    "url": "https://github.com/nguyenbahung94"
   },
-  "homepage": "https://github.com/bahung-nguyen/figma-to-compose",
-  "repository": "https://github.com/bahung-nguyen/figma-to-compose",
+  "homepage": "https://github.com/nguyenbahung94/FigmaToCompose",
+  "repository": "https://github.com/nguyenbahung94/FigmaToCompose",
   "license": "MIT",
   "keywords": [
     "figma",
