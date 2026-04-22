@@ -114,7 +114,7 @@ Figma URL
 
 Generated code uses markers for incremental updates:
 ```kotlin
-// <figma-generated id="ShiftCard.header" hash="abc123">
+// <figma-generated id="ProductCard.header" hash="abc123">
 Text(text = data.title, style = AppTypography.HeadingBold, ...)
 // </figma-generated>
 ```

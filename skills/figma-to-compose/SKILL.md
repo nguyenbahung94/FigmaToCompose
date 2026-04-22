@@ -136,7 +136,7 @@ For each Figma component name:
 Display all bootstrap entries:
   | Figma Name     | → | Compose Component | Confidence | Confirm? |
   |----------------|---|------------------|------------|----------|
-  | Card/Shift     | → | ShiftCard        | 0.85       | y/n      |
+  | Card/Product     | → | ProductCard        | 0.85       | y/n      |
   | Button/Primary | → | AppButton        | 0.95       | y/n      |
 
 User confirms each entry:
@@ -315,7 +315,7 @@ Does NOT run Stage 6 (Generator) — no files written.
 Output:
   Layout Map (spatial ASCII tree from Stage 1)
   Token Resolution log:
-    ✓ #0461CB → color.brand-primary (token-mapping.json exact match)
+    ✓ #0066CC → color.brand-primary (token-mapping.json exact match)
     ✓ #16px → spacing.medium (exact match)
     ⚠ #D9D9D9 → not found in token-mapping.json, not in colors_source → UNRESOLVED
   Component Mapping log:
@@ -338,7 +338,7 @@ Shows all entries in component-mapping.json where:
 For each entry:
   | Figma Name     | → | Compose Component | Confidence | Source    | Action   |
   |----------------|---|------------------|------------|-----------|----------|
-  | Card/Shift     | → | ShiftCard        | 0.85       | bootstrap | confirm? |
+  | Card/Product     | → | ProductCard        | 0.85       | bootstrap | confirm? |
 
 User action per entry:
   y       → confidence=1.0, source=manual, needs_review=false
@@ -390,7 +390,7 @@ Any key not matching → FAIL with parse error. No exceptions.
 
 token-mapping.json schema for colors:
 ```json
-"color.primary": { "hex": "#0461CB", "compose": "MaterialTheme.colorScheme.primary" }
+"color.primary": { "hex": "#0066CC", "compose": "MaterialTheme.colorScheme.primary" }
 ```
 
 ```
@@ -688,11 +688,11 @@ IF Figma node ID changed (node deleted + recreated):
 Print before proceeding to generator:
 ```
 IR Tree:
-  Vertical(spacing=spacing.medium, width=Fill, height=Wrap) [id=ShiftCard]
-  ├── Component(ShiftCard) [confidence=0.92, id=ShiftCard.root]
-  │   ├── slot:header → Text("Day Shift", typography.headline, color.on-surface)
+  Vertical(spacing=spacing.medium, width=Fill, height=Wrap) [id=ProductCard]
+  ├── Component(ProductCard) [confidence=0.92, id=ProductCard.root]
+  │   ├── slot:header → Text("Featured Item", typography.headline, color.on-surface)
   │   └── slot:actions → Component(AppButton, variant=Primary, size=Large)
-  └── Fallback("Badge/Status", Minor) [id=ShiftCard.badge]
+  └── Fallback("Badge/Status", Minor) [id=ProductCard.badge]
 ```
 
 ---
@@ -889,9 +889,9 @@ Never overwrite developer-edited code.
 ### Region marker format
 
 ```kotlin
-// <figma-generated id="ShiftCard.header" hash="a3f9c2">
+// <figma-generated id="ProductCard.header" hash="a3f9c2">
 @Composable
-private fun ShiftCardHeader(title: String) { ... }
+private fun ProductCardHeader(title: String) { ... }
 // </figma-generated>
 ```
 
@@ -956,7 +956,7 @@ ONLY for source = "bootstrap" or source = "manual"
 source = "ai" → NO boost until user explicitly confirms (sets source = "manual")
 
 context_key = parentComponentName + ":" + slotName + ":" + componentVariant
-// e.g. "ShiftCard:actions:PrimaryButton" ≠ "JobCard:actions:SecondaryButton"
+// e.g. "ProductCard:actions:PrimaryButton" ≠ "OrderCard:actions:SecondaryButton"
 
 IF context_key appears ≥ 3 times in entry.usage_context_history:
   entry.confidence = min(1.0, entry.confidence + 0.01)
@@ -998,8 +998,8 @@ List all Fallback nodes from last run with actionable hints:
   Option B: add "Icon/Chevron" → "ChevronIcon" to component-mapping.json
 
 [Major] "Card/Job"
-  Option A: @Composable fun JobCard(jobId: String, title: String, modifier: Modifier = Modifier) { ... }
-  Option B: add "Card/Job" → "JobCard" to component-mapping.json
+  Option A: @Composable fun OrderCard(jobId: String, title: String, modifier: Modifier = Modifier) { ... }
+  Option B: add "Card/Job" → "OrderCard" to component-mapping.json
   ⚠️ Major fallback — will block generation until resolved.
 ```
 
@@ -1011,7 +1011,7 @@ List all Fallback nodes from last run with actionable hints:
 2. Check each id against current Figma file via get_design_context
 3. Show list of orphans (Figma node no longer exists):
    Orphan blocks:
-   - id="ShiftCard.header.oldBadge" in ShiftCard.kt:142
+   - id="ProductCard.header.oldBadge" in ProductCard.kt:142
      Delete? y/n
 4. Delete selected → remove block + markers
 5. Leave non-selected untouched
@@ -1058,15 +1058,15 @@ Detection signals:
 
 Example output:
 ```
-[ShiftSummaryScreen 393×854]
+[CheckoutScreen 393×854]
 │
 ├── [TOP] Header h=264dp bg=color.brand-primary
-│   └── "Hi Jess" [typography.heading-bold, color.white]
+│   └── "Hi Alex" [typography.heading-bold, color.white]
 │
 ├── [CENTER] TodayCard bg=color.card-background, rounded=11dp
 │   ├── "TODAY" [typography.subhead-medium, color.text-label]
 │   ├── "9:00am - 4:00pm" [typography.heading-bold, color.black-900]
-│   └── "Starts in 9 min" [typography.body-medium, color.brand-primary]
+│   └── "Ready in 2 min" [typography.body-medium, color.brand-primary]
 │
 └── [BOTTOM] Navbar h=50dp bg=color.white
     └── Tab×5: Summary | Schedule | Availability | Notifications | More
@@ -1129,7 +1129,7 @@ Show INFO logs: pipeline stage transitions, confidence boost events, decay event
 
 **Treating Figma as source of truth** — If Figma has a color not in design system → FAIL. Never emit "approximately correct" code. The mapping wins.
 
-**Generating new @Composable for known component** — If `ShiftCard` is in mapping, NEVER create a new `ShiftCardV2`. Use the mapping.
+**Generating new @Composable for known component** — If `ProductCard` is in mapping, NEVER create a new `ProductCardV2`. Use the mapping.
 
 **Writing outside markers on re-run** — Generator touches ONLY content between `// <figma-generated>` tags. Never touches code outside.
 

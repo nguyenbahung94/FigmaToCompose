@@ -393,7 +393,7 @@ System tracks fallback history in `.claude/figma-to-compose/fallback-history.jso
 ```json
 {
   "Badge/Status": { "count": 5, "last_seen": "2026-04-17", "level": "Minor" },
-  "Card/Shift": { "count": 2, "last_seen": "2026-04-17", "level": "Major" }
+  "Card/Product": { "count": 2, "last_seen": "2026-04-17", "level": "Major" }
 }
 ```
 
@@ -577,8 +577,8 @@ Stored in `rejected_candidates` (see Section 8). Prevents repeat AI suggestions 
 Track which Figma components appear together in the same file:
 ```json
 "co_occurrence": {
-  "Button/Primary": ["Card/Shift", "Header/Nav"],
-  "Badge/Status": ["Card/Shift"]
+  "Button/Primary": ["Card/Product", "Header/Nav"],
+  "Badge/Status": ["Card/Product"]
 }
 ```
 High co-occurrence → boost confidence of paired mappings when context matches.
