@@ -1,21 +1,28 @@
 # figma-to-compose
 
-> **Design → System → Code.** Not a UI generator — a pipeline where your Design System is the source of truth.
+> **Design → System → Code.** A Claude Code plugin that turns Figma frames into production-ready Jetpack Compose code — constrained by *your* design system, not the designer's hex codes.
 
-A Claude Code plugin that converts Figma designs into production-ready Jetpack Compose Kotlin code, constrained by your project's design tokens and component library.
+Most "Figma-to-code" tools treat Figma as the source of truth and emit hardcoded values. This plugin does the opposite: **your design system is the contract**, Figma is just input. If a color or component isn't in your mapping, the pipeline fails loudly instead of guessing.
 
-## Core Principle
+---
 
-Figma = input. Your design system = source of truth. Generated code = output constrained by the system.
+## Why this exists
 
-If Figma uses a color not in your token mapping → pipeline fails (never emits hardcoded values).
-If Figma uses a component not in your component mapping → FallbackLevel determines behavior.
+- **No hardcoded values.** Every color, spacing, and typography value must resolve to a token. Missing token → pipeline fails, not a silent `Color(0xFFD9D9D9)` sneaking into prod.
+- **Component reuse is enforced.** If `ProductCard` exists in your codebase, you get `ProductCard(...)` — never a generated `ProductCardV2`.
+- **Fails safe, never half-right.** A root-level component with no mapping and no Material3 equivalent *blocks generation entirely* — the plugin refuses to write broken code. Fix the mapping, then re-run.
+- **Incremental-safe.** Generated regions are wrapped in markers. Re-running updates only what Figma changed. Your manual edits outside the markers are never touched.
+- **Self-improving.** Mappings gain confidence when used consistently, decay when stale, and escalate fallbacks automatically.
+
+---
 
 ## Requirements
 
 - Claude Code ≥ 1.5.0
-- Figma API access (claude.ai Figma MCP)
-- Android project with Jetpack Compose
+- Figma MCP access (via `claude.ai Figma` connector)
+- An Android project with Jetpack Compose
+
+---
 
 ## Install
 
@@ -26,53 +33,84 @@ git clone https://github.com/nguyenbahung94/FigmaToCompose.git \
   ~/.claude/plugins/figma-to-compose
 ```
 
-Or clone anywhere and add the path to your Claude Code settings. Restart Claude Code after install so the `/figma-to-compose` command and skills are discovered.
+Or clone anywhere and register the path in your Claude Code plugin settings. Restart Claude Code so the `/figma-to-compose` command and skills are discovered.
+
+---
 
 ## Quick Start
 
 ```bash
-# 1. First-time setup (run once per project)
-/figma-to-compose init
+# One-time project setup
+/figma-to-compose init           # scan design system -> config + token mapping
+/figma-to-compose bootstrap      # scan @Composable functions -> component mapping
+/figma-to-compose validate       # sanity check before first generation
 
-# 2. Seed component mapping from your codebase
-/figma-to-compose bootstrap
-
-# 3. Verify everything is configured correctly
-/figma-to-compose validate
-
-# 4. Explore a Figma frame before generating
+# Exploring a frame (read-only)
 /figma-to-compose inspect https://figma.com/design/...
+/figma-to-compose https://figma.com/design/... --layout-map
 
-# 5. Generate code
-/figma-to-compose run https://figma.com/design/...
+# Generating code
+/figma-to-compose run https://figma.com/design/...        # smart, confidence-gated
+/figma-to-compose generate https://figma.com/design/...   # always writes
 ```
+
+---
 
 ## Commands
 
 ### Setup
 | Command | Description |
 |---|---|
-| `/figma-to-compose init` | First-time setup: scan design system → generate config + token-mapping |
-| `/figma-to-compose bootstrap` | Scan @Composable functions → seed component-mapping (requires init) |
-| `/figma-to-compose validate` | Verify config + mappings are valid before use |
+| `/figma-to-compose init` | Scan design system, create `config.json` and `token-mapping.json` |
+| `/figma-to-compose bootstrap` | Scan `@Composable` functions, seed `component-mapping.json` |
+| `/figma-to-compose validate` | Verify config and mappings are well-formed |
 
 ### Debug
 | Command | Description |
 |---|---|
-| `/figma-to-compose inspect <url>` | Show IR tree + token resolution + mapping decisions (no codegen) |
+| `/figma-to-compose inspect <url>` | Full IR tree + token resolution + mapping decisions (no codegen) |
 | `/figma-to-compose <url> --layout-map` | Spatial ASCII tree of the Figma frame |
-| `/figma-to-compose review-mappings` | Review + confirm pending component mappings |
-| `/figma-to-compose suggest-mapping` | List unmapped Figma components with suggestions |
+| `/figma-to-compose review-mappings` | Walk pending component mappings, confirm or reject |
+| `/figma-to-compose suggest-mapping` | List unmapped Figma components with suggested matches |
 | `/figma-to-compose cleanup-orphans` | List generated blocks whose Figma node no longer exists |
 
 ### Execution
 | Command | Description |
 |---|---|
-| `/figma-to-compose run <url>` | Smart: respects confidence gate, may auto dry-run |
-| `/figma-to-compose generate <url>` | Deterministic: always generates |
-| `/figma-to-compose ci <url>` | CI mode: fail-fast, machine-readable JSON output |
+| `/figma-to-compose run <url>` | Smart mode — auto dry-run if confidence < 0.70 |
+| `/figma-to-compose generate <url>` | Deterministic — always writes files |
+| `/figma-to-compose ci <url>` | CI mode — fail-fast, machine-readable JSON |
 
-**Flags (run/generate):** `--dry-run`, `--allow-write-low-confidence`, `--verbose`
+**Flags** (`run` / `generate` only): `--dry-run`, `--allow-write-low-confidence`, `--verbose`.
+
+---
+
+## What you get
+
+Generated code is wrapped in stable markers so re-runs are safe:
+
+```kotlin
+// <figma-generated id="ProductCard.header" hash="a3f9c2">
+@Composable
+private fun ProductCardHeader(title: String) {
+    Text(
+        text = title,
+        style = AppTypography.HeadingBold,
+        color = colorResource(R.color.on_surface),
+        modifier = Modifier.padding(16.dp),
+    )
+}
+// </figma-generated>
+```
+
+- Colors → `colorResource(R.color.*)` from your `colors.xml`
+- Typography → `<YourTypographyClass>.*` from your config
+- Spacing → `<N>.dp` from your spacing tokens
+- Components → your existing `@Composable`, resolved via `component-mapping.json`
+
+Never `Color(0xFF...)`. Never raw `fontSize = 16.sp`. Never a rogue new `ProductCardV2`.
+
+---
 
 ## Project Config
 
@@ -80,13 +118,13 @@ After `init`, your project gets:
 
 ```
 .claude/figma-to-compose/
-  config.json                  ← platform, typography class, colors path
+  config.json                  # platform, typography class, colors path
   mappings/
-    token-mapping.json         ← color/spacing/typography tokens
-    component-mapping.json     ← Figma component → Compose component mappings
+    token-mapping.json         # color, spacing, typography tokens
+    component-mapping.json     # Figma component -> Compose component
 ```
 
-**config.json example:**
+**config.json**
 ```json
 {
   "platform": "android",
@@ -100,38 +138,45 @@ After `init`, your project gets:
 }
 ```
 
-## How It Works
+---
+
+## Pipeline
 
 ```
 Figma URL
-  → Stage 1: Fetch + Normalize (strip hidden layers, flatten redundant wrappers)
-  → Stage 2: Token Extract (hex → token-mapping, fallback: colors.xml grep)
-  → Stage 3: Screen vs Component detection
-  → Stage 4: Component mapping lookup (component-mapping → FallbackLevel)
-  → Stage 5: Layout IR build (Intent tree: direction, mainAxis, crossAxis)
-  → Stage 6: Platform code generation (android: IR → Jetpack Compose)
+  |
+  |  Stage 1  Fetch + Normalize       strip hidden layers, flatten wrappers
+  |  Stage 2  Token Extract           hex -> token-mapping, fallback to colors.xml
+  |  Stage 3  Screen vs Component     semantic rules first, size last resort
+  |  Stage 4  Component Lookup        component-mapping -> FallbackLevel
+  |  Stage 5  Layout IR Build         platform-agnostic intent tree
+  |  Stage 6  Codegen                 IR -> Jetpack Compose (or SwiftUI)
+  |  Stage 7  Confidence Gate         auto dry-run if avg < 0.70
+  |  Stage 8  Incremental Write       marker-based, safe on re-run
+  v  Stage 9  Mapping Lifecycle       decay stale, boost consistent
 ```
 
-Generated code uses markers for incremental updates:
-```kotlin
-// <figma-generated id="ProductCard.header" hash="abc123">
-Text(text = data.title, style = AppTypography.HeadingBold, ...)
-// </figma-generated>
-```
+Stages 1–5 are platform-agnostic. Only Stage 6 knows about Compose (or SwiftUI). Adding a new platform = writing one new skill file.
 
-Re-running updates inside markers only. Your edits outside are safe.
+---
 
 ## Self-Improving System
 
-The plugin learns over time:
-- **Confidence decay:** unused mappings fade → flagged for re-review
-- **Negative learning:** rejected candidates are remembered, never re-suggested
-- **Fallback escalation:** Minor fallback ≥ 3 → auto-suggest mapping; ≥ 5 → force fix
-- **Autonomy phases:** system progresses from manual → assisted → autonomous as confidence builds
+- **Confidence decay** — unused mappings fade; <0.5 flagged for re-review, <0.3 removed
+- **Negative learning** — rejected candidates stay rejected, never re-suggested
+- **Consistency boost** — mappings used repeatedly in the same context gain confidence
+- **Fallback escalation** — Minor fallback ≥ 3 uses → auto-suggest mapping; ≥ 5 → force fix
+- **Autonomy phases** — system progresses from manual → assisted → autonomous as confidence builds
+
+---
 
 ## Adding a New Platform
 
+The IR (Stages 1–5) is platform-agnostic. A new target (iOS, Flutter, Web) = one new skill file implementing Stage 6.
+
 See [docs/contributing-platform.md](docs/contributing-platform.md).
+
+---
 
 ## License
 
