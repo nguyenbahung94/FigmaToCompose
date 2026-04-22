@@ -22,7 +22,7 @@ If Figma uses a component not in your component mapping → FallbackLevel determ
 Clone into your Claude Code plugins directory:
 
 ```bash
-git clone https://github.com/bahung-nguyen/figma-to-compose.git \
+git clone https://github.com/nguyenbahung94/FigmaToCompose.git \
   ~/.claude/plugins/figma-to-compose
 ```
 
