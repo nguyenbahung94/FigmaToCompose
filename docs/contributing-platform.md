@@ -36,7 +36,7 @@ skills/figma-to-compose-<platform>/
 | `Layout(direction=Stack)` | Absolute positioning (e.g. `ZStack` for iOS) |
 | `Component(mappingKey)` | Lookup in component-mapping.json → emit mapped view |
 | `Text` | Platform text widget with token-resolved style/color |
-| `Fallback(Minor)` | Placeholder with TODO comment |
+| `Fallback(Minor)` | Empty placeholder, reason in the fallback report (no comment) |
 | `Fallback(Major)` | BLOCK — do not generate |
 
 **mainAxis → platform arrangement:**

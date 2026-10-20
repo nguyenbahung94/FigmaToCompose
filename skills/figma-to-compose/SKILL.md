@@ -1,6 +1,6 @@
 ---
 name: figma-to-compose
-description: Use when user provides a figma.com URL and wants to generate Jetpack Compose .kt files for an Android app. Triggers on "convert Figma", "generate Compose from Figma", "figma-to-compose", or any Figma design URL paired with an Android code request.
+description: Use when a figma.com URL must become Jetpack Compose UI in an Android app, whether the URL is in the prompt or in a ticket or spec being implemented. Triggers on "implement this Figma", "làm giống Figma", "convert Figma", "generate Compose from Figma", "figma-to-compose", or any Figma design URL paired with Android UI work.
 ---
 
 # Figma-to-Compose Pipeline
@@ -17,7 +17,7 @@ Design System     → source of truth (component-mapping.json + token-mapping.js
 Generated Code    → output constrained by the system, not by Figma directly
 ```
 
-If Figma uses a color not in `token-mapping.json` → FAIL (never emit hardcoded values).
+If Figma uses a color not in `token-mapping.json` → resolve it from `colors.xml`, else add it there and report it (never emit hardcoded values).
 If Figma uses a component not in `component-mapping.json` → FallbackLevel determines behavior.
 Figma is never allowed to override the Design System. The system wins.
 
@@ -44,7 +44,7 @@ The plugin reads project-local config first. Run `/figma-to-compose init` to gen
 ```
 # Setup (run in order)
 /figma-to-compose init              ← first-time setup: generate config + token-mapping
-/figma-to-compose bootstrap         ← scan codebase, seed component-mapping (requires init)
+/figma-to-compose bootstrap [<url>] ← scan codebase, seed component-mapping (requires init)
 /figma-to-compose validate          ← verify config + mappings are valid before use
 
 # Debug
@@ -76,280 +76,19 @@ The plugin reads project-local config first. Run `/figma-to-compose init` to gen
 
 ---
 
-## Bootstrap Procedure
+## Load on demand
 
-Run once: `/figma-to-compose bootstrap`
-
-### Step 1 — Extract Compose components from codebase
-
-```
-Run: grep -r "@Composable" <compose_source_dir> --include="*.kt" -l
-     (compose_source_dir = resolved from config.json "compose_package" → e.g. src/main/java/)
-For each file found:
-  Extract: function name, full parameter list, parameter types
-  Store: { name, signature, file_path }
-```
-
-**Component filter rules (applied after extraction):**
-```
-INCLUDE:
-  - public or internal visibility
-  - Has @Composable annotation
-  - Has ≥ 2 parameters
-  - Name does NOT end with "Preview"
-
-EXCLUDE:
-  - @Preview annotated functions
-  - private functions
-  - Functions with < 2 params (likely helpers or wrappers)
-  - Functions in files named *Preview*.kt
-```
-
-**AI matching score (Step 3):**
-```
-score = 0.5 * name_similarity + 0.3 * param_similarity + 0.2 * usage_frequency
-Accept ONLY if score ≥ 0.70. Otherwise → mark as "unmapped", needs_review: true.
-NEVER accept a candidate present in the entry's rejected_candidates list (score forced = 0).
-```
-
-### Step 2 — Get Figma component suggestions
-
-```
-Call: get_code_connect_suggestions with the Figma file key from the URL
-Returns: list of Figma component names + suggested code matches
-```
-
-### Step 3 — AI match Figma names → Compose signatures
-
-```
-For each Figma component name:
-  1. Exact name match against extracted Compose functions → confidence=0.95
-  2. Fuzzy name match (edit distance ≤ 2) → confidence=0.80
-  3. Semantic match (AI judgment) → confidence=0.70
-  All stored with source=bootstrap
-  DO NOT set confidence=1.0 — user review required first
-```
-
-### Step 4 — Show mapping table for one-time review
-
-```
-Display all bootstrap entries:
-  | Figma Name     | → | Compose Component | Confidence | Confirm? |
-  |----------------|---|------------------|------------|----------|
-  | Card/Product     | → | ProductCard        | 0.85       | y/n      |
-  | Button/Primary | → | AppButton        | 0.95       | y/n      |
-
-User confirms each entry:
-  y → confidence=1.0, source=manual → saved to component-mapping.json
-  n → entry dropped
-  skip → stays at bootstrap confidence, saved with source=bootstrap
-
-Log: "Bootstrap complete. X entries confirmed, Y dropped, Z pending review."
-```
-
----
-
-## Init Procedure
-
-Run once per project: `/figma-to-compose init`
-
-**Pre-check:** If `.claude/figma-to-compose/config.json` already exists → ask user:
-"Config found. Re-run init? This will overwrite config.json but preserve existing mappings. (y/n)"
-If n → abort.
-
-### Step 1 — Detect platform
-
-```
-Search strategy (in priority order):
-  1. Find ANY file with @Composable annotation:
-     grep -r "androidx.compose\|@Composable" . --include="*.kt" -l
-  2. If multiple modules found → count @Composable functions per module:
-     grep -r "@Composable" <module>/src --include="*.kt" -c
-     → pick module with highest count
-  3. Find ANY file with SwiftUI:
-     grep -r "import SwiftUI" . --include="*.swift" -l
-  4. If both Android + iOS found → ask user which platform to target
-  5. Nothing found → ask user: "Which platform? (android/ios)"
-
-Store detected platform + source module path for Steps 2-5.
-```
-
-### Step 2 — Scan color tokens (Android)
-
-```
-Source priority (try each, merge results):
-  1. Parse colors_source (ask user for path, default: src/main/res/values/colors.xml):
-     grep '<color name="' <colors_source>
-     Extract: name="xxx" → #HEX
-     → entry: { "hex": "#HEX", "resource": "xxx", "compose": "colorResource(R.color.xxx)", "needs_review": false }
-
-  2. Search for Color() definitions in Kotlin:
-     grep -r 'Color(0x' . --include="*.kt" | head -50
-     For each unique hex NOT already in step 1 results:
-       → add entry with "needs_review": true
-
-  3. If < 3 colors found total → ask user:
-     "Found only X colors. Please point me to your colors file or theme class."
-
-Output: list of color token candidates
-```
-
-### Step 3 — Scan typography tokens (Android)
-
-```
-Source priority:
-  1. Search for TextStyle definitions:
-     grep -r 'TextStyle(' . --include="*.kt" -l
-     For each file found → extract fontSize, fontWeight, lineHeight
-     → map to typography.* key by size+weight heuristic:
-       fontWeight=700 + fontSize≥20 → "typography.display-bold"
-       fontWeight=700 + fontSize=18 → "typography.heading-bold"
-       fontWeight=400 + fontSize=16 → "typography.body-regular"
-       fontWeight=500 + fontSize=16 → "typography.body-medium"
-       fontWeight=700 + fontSize=16 → "typography.body-bold"
-       fontWeight=400 + fontSize=14 → "typography.subhead-regular"
-       fontWeight=700 + fontSize=14 → "typography.subhead-bold"
-       fontWeight=400 + fontSize=12 → "typography.caption-regular"
-       Unrecognized combo → "typography.unknown-NNpx-WWw", needs_review: true
-
-  2. Ask user: "Found X typography styles. Is there a typography class/object to use?
-     Enter class name (e.g. AppTypography) or press Enter to skip:"
-     If provided → store as typography_class in config
-
-  3. If no TextStyle found → ask user to select typography file manually
-
-Output: list of typography token candidates
-```
-
-### Step 4 — Scan spacing tokens (Android)
-
-```
-Source priority:
-  1. Parse dimens.xml if exists:
-     grep '<dimen' src/main/res/values/dimens.xml 2>/dev/null
-     Extract dp values
-  2. Search for .dp constants:
-     grep -r '= [0-9]*\.dp\b' . --include="*.kt" | grep -o '[0-9]*\.dp' | sort -u | head -20
-     Extract unique integer dp values
-
-  Map to spacing.* keys:
-    4dp  → spacing.xsmall
-    8dp  → spacing.small
-    16dp → spacing.medium
-    24dp → spacing.large
-    32dp → spacing.xlarge
-    48dp → spacing.xxlarge
-    Other → spacing.custom-Ndp, needs_review: true
-
-Output: list of spacing token candidates
-```
-
-### Step 5 — Generate files
-
-```
-Write .claude/figma-to-compose/config.json:
-{
-  "platform": "<detected>",
-  "schema_version": "1.0",
-  "mapping_version": "1.0",
-  "plugin_version": "1.x",
-  "autonomy_phase": 1,
-  "colors_source": "<detected_or_asked>",
-  "typography_class": "<detected_or_asked_or_empty>",
-  "compose_package": "<detected_or_asked>"
-}
-
-Write .claude/figma-to-compose/mappings/token-mapping.json:
-  Use templates/android/token-mapping.template.json as base schema.
-  Merge all color/typography/spacing candidates from Steps 2-4.
-  Mark uncertain entries with "needs_review": true.
-
-DO NOT write component-mapping.json — that is bootstrap's job.
-```
-
-### Step 6 — Summary
-
-```
-Print:
-✓ Config written to .claude/figma-to-compose/config.json
-✓ X color tokens extracted (Y need review)
-✓ Z typography styles mapped (W need review)
-✓ S spacing tokens extracted
-
-⚠ Next steps (run in order):
-  1. /figma-to-compose bootstrap   — scan @Composable functions → component mapping
-  2. /figma-to-compose validate    — verify everything before first use
-  3. /figma-to-compose review-mappings  — confirm pending entries
-```
-
----
-
-## Validate Procedure
-
-Run: `/figma-to-compose validate`
-
-```
-Checks:
-  ✓ config.json exists + valid against schemas/config.schema.json
-  ✓ mappings/token-mapping.json exists + all required fields present
-  ✓ mappings/component-mapping.json exists + schema valid
-  ✓ colors_source path resolves (file exists)
-  ✓ No token entries with "needs_review": true remaining
-  ✓ plugin_version in config is compatible with this plugin version
-
-Output:
-  PASS → "Config valid. Ready to use."
-  FAIL → list each failing check with fix instructions
-```
-
----
-
-## Inspect Procedure
-
-Run: `/figma-to-compose inspect <figma-url>`
-
-```
-Runs Stages 1–5 (Fetch → Normalize → Token Extract → Screen Detection → IR Build)
-Does NOT run Stage 6 (Generator) — no files written.
-
-Output:
-  Layout Map (spatial ASCII tree from Stage 1)
-  Token Resolution log:
-    ✓ #0066CC → color.brand-primary (token-mapping.json exact match)
-    ✓ #16px → spacing.medium (exact match)
-    ⚠ #D9D9D9 → not found in token-mapping.json, not in colors_source → UNRESOLVED
-  Component Mapping log:
-    ✓ Button/Primary/Large → AppButton (confidence=1.0)
-    ⚠ Badge/Status → Fallback(Minor) — no mapping found
-  IR Tree (LayoutNode structure)
-  Summary: X resolved, Y unresolved tokens, Z fallbacks
-```
-
----
-
-## Review Mappings Procedure
-
-Run: `/figma-to-compose review-mappings`
-
-```
-Shows all entries in component-mapping.json where:
-  needs_review = true  OR  confidence < 0.7  OR  source = "bootstrap"
-
-For each entry:
-  | Figma Name     | → | Compose Component | Confidence | Source    | Action   |
-  |----------------|---|------------------|------------|-----------|----------|
-  | Card/Product     | → | ProductCard        | 0.85       | bootstrap | confirm? |
-
-User action per entry:
-  y       → confidence=1.0, source=manual, needs_review=false
-  n       → entry dropped (marked unmapped)
-  skip    → keep as-is (stays at bootstrap confidence)
-  <name>  → remap to different Compose component name
-```
+| Subcommand or flag | Read first |
+|---|---|
+| `init`, `bootstrap`, `validate`, `inspect`, `review-mappings` | `references/setup.md` |
+| `suggest-mapping`, `cleanup-orphans`, `--layout-map`, `--dry-run`, `--allow-write-low-confidence`, `--verbose` | `references/cli.md` |
+| `run`, `generate` | Stages 1-9 below. `run`/`generate` with an empty component-mapping.json: read `references/setup.md` and bootstrap first. |
 
 ---
 
 ## Stage 1: Fetch + Normalize
+
+**Before the first call:** load the Figma `figma-design-to-code` skill (`/figma-design-to-code`, fallback `skill://figma/figma-design-to-code/SKILL.md`). The Figma MCP requires it before `get_design_context`.
 
 **Call:** `get_design_context(nodeId, fileKey)` — call ONCE per URL, cache result for session.
 
@@ -409,12 +148,16 @@ For each fill, stroke, text color from Figma:
 
   3. Not in token-mapping.json AND not in colors.xml → CIELAB closest match:
      - ΔE < 2.0 → WARN "approximate match ΔE=X", use closest token
-     - ΔE ≥ 2.0 → FAIL, report to user:
-         "Color #XXXXXX not in colors.xml or token-mapping.json.
-          Option A: Add to colors.xml → re-run (pipeline will auto-pickup)
-          Option B: Map manually in token-mapping.json"
+     - ΔE ≥ 2.0 → ADD it, do not stop:
+         name = Figma variable/style name in snake_case, else "figma_<hex6>"
+         append <color name="<name>">#XXXXXX</color> to <colors_source>
+         (and values-night/colors.xml when the Figma variable has a dark mode value)
+         append to token-mapping.json with source=auto
+         emit colorResource(R.color.<name>)
+         add the row to "Auto-added tokens" in the run report
 
-NEVER emit Color(0xFF...) or hardcoded hex. FAIL instead.
+NEVER emit Color(0xFF...) or hardcoded hex. Add the resource instead.
+In --dry-run: do not write; list what would be added.
 ```
 
 ### Spacing
@@ -578,7 +321,7 @@ IF Fallback(level=Major) AND node is nested (not root):
 
 IF Fallback(level=Minor):
   → Log WARN
-  → Continue, emit Box placeholder with actionable comment
+  → Continue, emit Box placeholder (no comment; the reason goes to the fallback report)
 ```
 
 ### Step 5 — Update usage stats on successful match
@@ -706,7 +449,7 @@ Read the IR. Emit Kotlin. Never read Figma data directly.
 ```
 1. IF component in component-mapping.json → MUST use it. No exceptions.
 2. IF component NOT in mapping → apply FallbackLevel from Stage 4 Step 3:
-   Minor fallback: emit Box with TODO comment per Fallback template.
+   Minor fallback: emit Box per Fallback template. The reason goes to the fallback report, never into the code.
    Major fallback at root: BLOCK generation entirely.
    NEVER create a new named @Composable function for an unmapped component.
 3. Colors: ALWAYS emit the exact `compose` value from token-mapping.json.
@@ -714,7 +457,7 @@ Read the IR. Emit Kotlin. Never read Figma data directly.
 4. Typography: ALWAYS emit <typography_class>.* from config.json — NEVER MaterialTheme.typography.* or hardcoded fontSize/fontWeight
 5. Spacing:    ALWAYS emit token.compose (e.g. 16.dp) — NEVER raw Int dp without a token
 6. NEVER emit raw Box() except for LayoutNode.Fallback. Fallback MUST log reason.
-7. NEVER add // generated by AI or // auto-generated comments.
+7. NEVER emit comments of any kind (no TODO, no markers, no "generated" notes). Incremental state lives in generated.json (Stage 8).
 8. Slot rules:
    required=true + node missing → FAIL
    required=false + node missing → skip silently
@@ -790,12 +533,8 @@ Text(
     modifier = if (action != null) Modifier.clickable { <actionCode> } else Modifier,
 )
 
-// Fallback → Box with TODO comment
-Box(modifier = Modifier) {
-    // TODO: [<level>] <description> — <reason>
-    // Option A: create @Composable fun <SuggestedName>(...)
-    // Option B: add '<FigmaName>' → '<ComposeName>' to component-mapping.json
-}
+// Fallback → empty Box, tagged so the report can point to it
+Box(modifier = Modifier.testTag("figma-fallback:<stableNodeId>"))
 ```
 
 ### Slot extraction
@@ -886,47 +625,55 @@ ANY Major fallback at nested level → force STAGED even if one-shot gate passed
 
 Never overwrite developer-edited code.
 
-### Region marker format
+### Manifest (no markers in code)
 
-```kotlin
-// <figma-generated id="ProductCard.header" hash="a3f9c2">
-@Composable
-private fun ProductCardHeader(title: String) { ... }
-// </figma-generated>
+Incremental state lives in `<project>/.claude/figma-to-compose/generated.json`, never in comments:
+
+```json
+{
+  "android/feature/src/main/java/.../ProductCard.kt": {
+    "ProductCard.header": {
+      "function": "ProductCardHeader",
+      "ir_hash": "a3f9c2",
+      "body_hash": "91be04"
+    }
+  }
+}
 ```
 
-**hash** = first 6 chars of SHA-256 of the serialized IR node subtree.
-Changes when Figma node structure changes. Same hash = skip regeneration.
+- **ir_hash** = first 6 chars of SHA-256 of the serialized IR node subtree. Changes when the Figma node changes.
+- **body_hash** = first 6 chars of SHA-256 of the function text as written. Changes when a developer edits it.
 
-### On re-run (file exists with markers)
+### On re-run (file listed in the manifest)
 
 ```
 For each IR node to generate:
-  1. Compute stableNodeId + hash
-  2. Search file for: // <figma-generated id="<stableNodeId>"
-  3. Found + hash matches → SKIP (no Figma change)
-  4. Found + hash differs → regenerate that block only (replace between markers)
-  5. Not found → append new block at end of file
-     Log WARN: "New block appended: <id>. Check for orphaned old block."
-  Code OUTSIDE markers → NEVER touched.
+  1. Compute stableNodeId + ir_hash
+  2. Look up the entry; find `fun <function>` in the file
+  3. Entry found, function found:
+     - current body_hash ≠ stored body_hash → developer edited it → SKIP, WARN "Kept manual edit: <function>"
+     - ir_hash matches → SKIP (no Figma change)
+     - ir_hash differs → replace that function only, update both hashes
+  4. Entry found, function missing → developer removed it → SKIP, WARN
+  5. No entry → append the new function at end of file, add the entry
+  Code not listed in the manifest → NEVER touched.
 ```
 
-### On re-run (file exists WITHOUT markers)
+### On re-run (file exists, not in the manifest)
 
 ```
 → STOP
-→ WARN: "File <path> exists without figma-generated markers.
-         Option A: add markers manually around generated sections.
-         Option B: pass --allow-write-low-confidence to overwrite entire file (destructive — loses all manual edits)."
+→ WARN: "File <path> was not generated by this pipeline.
+         Option A: generate into a new file and call it from <path>.
+         Option B: pass --allow-write-low-confidence to overwrite the entire file (destructive — loses all manual edits)."
 → Do NOT write until user explicitly passes --allow-write-low-confidence
 ```
 
 ### On new file
 
 ```
-→ Create full file
-→ Package declaration + imports → OUTSIDE markers
-→ All generated functions → INSIDE markers
+→ Create full file (package, imports, functions)
+→ Add one manifest entry per generated function
 ```
 
 ---
@@ -978,130 +725,11 @@ IF 2+ entries match same Figma node:
 
 ```
 source = "manual"    → always save
-source = "bootstrap" → always save (user reviewed at bootstrap)
+source = "bootstrap" → always save (needs_review=true until confirmed via review-mappings)
 source = "ai"        → save only if confidence ≥ 0.85 OR user explicitly confirms
 ```
 
 Write updated `component-mapping.json` at end of run.
-
----
-
-## CLI Commands
-
-### `/figma-to-compose suggest-mapping`
-
-```
-List all Fallback nodes from last run with actionable hints:
-
-[Minor] "Icon/Chevron"
-  Option A: @Composable fun ChevronIcon(modifier: Modifier = Modifier) { Icon(Icons.Default.ChevronRight, contentDescription = null) }
-  Option B: add "Icon/Chevron" → "ChevronIcon" to component-mapping.json
-
-[Major] "Card/Job"
-  Option A: @Composable fun OrderCard(jobId: String, title: String, modifier: Modifier = Modifier) { ... }
-  Option B: add "Card/Job" → "OrderCard" to component-mapping.json
-  ⚠️ Major fallback — will block generation until resolved.
-```
-
-### `/figma-to-compose cleanup-orphans`
-
-```
-1. Scan all *.kt in <compose_output_dir> for // <figma-generated id="...">
-   (compose_output_dir = resolved from config.json "compose_package")
-2. Check each id against current Figma file via get_design_context
-3. Show list of orphans (Figma node no longer exists):
-   Orphan blocks:
-   - id="ProductCard.header.oldBadge" in ProductCard.kt:142
-     Delete? y/n
-4. Delete selected → remove block + markers
-5. Leave non-selected untouched
-```
-
-### `--layout-map`
-
-```
-Run Stage 1 (Fetch + Normalize) only.
-Output a spatial ASCII tree showing component hierarchy, position, and tokens.
-No IR, no code generation, no file writes.
-```
-
-Format rules:
-```
-[ScreenName WxH]
-│
-├── [POSITION] ComponentName [size, bg=token, optional]
-│   ├── "text content" [typography-token, color-token]
-│   ├── ChildComponent [bg=token]
-│   │   └── ...
-│   └── Badge/Chip [bg=token, text color-token]
-│
-└── [POSITION] ComponentName
-    └── ...
-```
-
-Position labels: TOP / HEADER / CENTER / BOTTOM / LEFT / RIGHT / OVERLAY
-For each component show: resolved token name (NOT hex) for bg/text colors.
-
-**N-column / N-day view detection (MANDATORY):**
-```
-IF multiple nodes have the same top Y (within ±2dp tolerance) AND the same height (within ±4dp tolerance) AND contain date/time header labels
-→ This is an N-column parallel view (e.g. 2-day schedule view)
-→ Count the number of column header labels = number of days shown simultaneously
-→ DateRow selection circle ≠ number of grid columns — always count column headers, not circles
-→ Label as: [GRID N-col] e.g. [GRID 2-col] Mon+Tue view
-
-Detection signals:
-  - N Card nodes with same top + same height → N parallel columns
-  - N "DayName - Date" text labels at same Y → N day headers
-  - Single circle in DateRow does NOT mean single column — verify by counting headers
-```
-
-Example output:
-```
-[CheckoutScreen 393×854]
-│
-├── [TOP] Header h=264dp bg=color.brand-primary
-│   └── "Hi Alex" [typography.heading-bold, color.white]
-│
-├── [CENTER] TodayCard bg=color.card-background, rounded=11dp
-│   ├── "TODAY" [typography.subhead-medium, color.text-label]
-│   ├── "9:00am - 4:00pm" [typography.heading-bold, color.black-900]
-│   └── "Ready in 2 min" [typography.body-medium, color.brand-primary]
-│
-└── [BOTTOM] Navbar h=50dp bg=color.white
-    └── Tab×5: Summary | Schedule | Availability | Notifications | More
-```
-
-Unresolved token? Show WARN inline:
-```
-├── Container bg=#D9D9D9 ⚠️ NOT IN COLORS.XML
-```
-
-### `--dry-run`
-
-```
-Run full pipeline (stages 1–6). Print:
-  - Detected node tree
-  - Token resolutions (including WARN for approximate matches)
-  - Component mapping decisions
-  - IR tree
-  - Generated code preview
-
-Do NOT write files. Do NOT update component-mapping.json.
-```
-
-### `--allow-write-low-confidence`
-
-```
-Bypass auto dry-run gate (avg_confidence < 0.70) ONLY.
-Does NOT bypass: unresolved tokens, Major fallback BLOCK rule.
-```
-
-### `--verbose`
-
-```
-Show INFO logs: pipeline stage transitions, confidence boost events, decay events.
-```
 
 ---
 
@@ -1112,8 +740,8 @@ Show INFO logs: pipeline stage transitions, confidence boost events, decay event
 | First time using | Run `bootstrap` first |
 | Low confidence (<0.70) | Auto dry-run — review mapping, then re-run |
 | Unknown component | Fallback.Minor → WARN+Box / Fallback.Major+root → BLOCK |
-| Token not in mapping | Lookup colors.xml → auto-add if found. Only FAIL if not in colors.xml either. |
-| File exists, no markers | STOP — warn user, do not overwrite |
+| Token not in mapping | Lookup colors.xml → auto-add if found. Not there either → add to colors.xml, list in report. |
+| File exists, not in generated.json | STOP — warn user, do not overwrite |
 | Designer renamed Figma node | Stable ID still matches (uses figmaNodeId, not name) |
 | Want to check without writing | `--dry-run` flag |
 | Mapping wrong for a component | Edit `component-mapping.json` directly, re-run |
@@ -1123,14 +751,14 @@ Show INFO logs: pipeline stage transitions, confidence boost events, decay event
 
 ## Common Mistakes
 
-**Hardcoding values** — Any `Color(0x...)`, raw dp, or font size = VIOLATION. Always resolve to token. If token missing → FAIL, don't guess.
+**Hardcoding values** — Any `Color(0x...)`, raw dp, or font size = VIOLATION. Always resolve to token. Color missing → add a resource and report it, never a literal.
 
-**Skipping bootstrap** — Running without bootstrap means empty `component-mapping.json` → everything falls back → generation blocked. Always bootstrap first.
+**Skipping bootstrap** — Running without bootstrap means empty `component-mapping.json` → everything falls back → generation blocked. `run`/`generate` with an empty mapping: run bootstrap with the same URL first, automatically.
 
-**Treating Figma as source of truth** — If Figma has a color not in design system → FAIL. Never emit "approximately correct" code. The mapping wins.
+**Treating Figma as source of truth** — The mapping wins. A Figma color not in the design system becomes a named resource in colors.xml and a report row, so a human sees every new color.
 
 **Generating new @Composable for known component** — If `ProductCard` is in mapping, NEVER create a new `ProductCardV2`. Use the mapping.
 
-**Writing outside markers on re-run** — Generator touches ONLY content between `// <figma-generated>` tags. Never touches code outside.
+**Overwriting manual edits on re-run** — Generator replaces ONLY functions listed in generated.json whose body_hash still matches. Everything else is untouched.
 
 **Spacing ties** — if 2 tokens have equal Δ to the Figma value: auto-pick the one with the smaller `dp` value (conservative sizing), log WARN. Do NOT ask user — just warn and proceed. Example: Figma=12dp, candidates spacing.small=8dp (Δ=4) and spacing.medium=16dp (Δ=4) → pick spacing.small.

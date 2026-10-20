@@ -13,7 +13,7 @@ Parse `$ARGUMENTS` and route to the skill stages as follows:
 | Args start with | Skill action |
 |---|---|
 | `init` | Stage 0: scan design system, generate `.claude/figma-to-compose/config.json` + `mappings/token-mapping.json` |
-| `bootstrap` | Stage 0.5: scan `@Composable` functions in the project, seed `mappings/component-mapping.json` |
+| `bootstrap [<url>]` | Stage 0.5: scan `@Composable` functions in the project, seed `mappings/component-mapping.json` |
 | `validate` | Verify `config.json` + mappings are well-formed and reference real files |
 | `inspect <url>` | Stages 1-5: fetch Figma node, show IR tree + token resolution + mapping decisions (no codegen) |
 | `<url> --layout-map` | Spatial ASCII tree of the Figma frame (no codegen) |
@@ -28,7 +28,7 @@ Parse `$ARGUMENTS` and route to the skill stages as follows:
 
 ## Required: read the skill
 
-Before executing ANY subcommand, load `skills/figma-to-compose/SKILL.md` (core pipeline) and, for Android codegen, `skills/figma-to-compose-android/SKILL.md`. The skills contain the authoritative stage definitions, hard rules, and edge-case handling.
+Before executing ANY subcommand, invoke the `figma-to-compose:figma-to-compose` skill (core pipeline) and, for Android codegen, `figma-to-compose:figma-to-compose-android`. The skills contain the authoritative stage definitions, hard rules, and edge-case handling.
 
 ## Reject
 

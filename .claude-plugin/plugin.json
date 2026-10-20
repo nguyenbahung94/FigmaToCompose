@@ -1,6 +1,6 @@
 {
   "name": "figma-to-compose",
-  "version": "1.0.0",
+  "version": "1.2.1",
   "description": "Figma → Jetpack Compose pipeline. Design System as source of truth.",
   "author": {
     "name": "nguyenbahung94",

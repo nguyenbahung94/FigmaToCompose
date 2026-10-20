@@ -1,0 +1,15 @@
+{
+  "name": "figma-to-compose",
+  "owner": {
+    "name": "nguyenbahung94",
+    "url": "https://github.com/nguyenbahung94"
+  },
+  "plugins": [
+    {
+      "name": "figma-to-compose",
+      "source": "./",
+      "description": "Figma → Jetpack Compose pipeline. Design System as source of truth.",
+      "version": "1.2.1"
+    }
+  ]
+}

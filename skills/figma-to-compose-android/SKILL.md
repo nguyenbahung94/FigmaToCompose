@@ -32,7 +32,7 @@ Consume `LayoutNode` IR from the core skill. Emit production-ready Kotlin.
 | `Stack` | `Box` with `Modifier.align()` per child |
 | `Component` | mapped `@Composable` from `component-mapping.json` |
 | `Text` | `Text(text, style, color, maxLines, overflow, textAlign)` |
-| `Fallback(Minor)` | `Box { // TODO: [Minor] <description> }` |
+| `Fallback(Minor)` | `Box(Modifier.testTag("figma-fallback:<stableNodeId>"))`, reason in the fallback report |
 | `Fallback(Major)` | BLOCK — do not generate |
 
 ## CommonProps → Modifier

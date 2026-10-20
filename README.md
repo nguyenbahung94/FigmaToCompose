@@ -11,7 +11,7 @@ Most "Figma-to-code" tools treat Figma as the source of truth and emit hardcoded
 - **No hardcoded values.** Every color, spacing, and typography value must resolve to a token. Missing token → pipeline fails, not a silent `Color(0xFFD9D9D9)` sneaking into prod.
 - **Component reuse is enforced.** If `ProductCard` exists in your codebase, you get `ProductCard(...)` — never a generated `ProductCardV2`.
 - **Fails safe, never half-right.** A root-level component with no mapping and no Material3 equivalent *blocks generation entirely* — the plugin refuses to write broken code. Fix the mapping, then re-run.
-- **Incremental-safe.** Generated regions are wrapped in markers. Re-running updates only what Figma changed. Your manual edits outside the markers are never touched.
+- **Incremental-safe.** Generated functions are tracked in `.claude/figma-to-compose/generated.json`, not in code comments. Re-running updates only what Figma changed. A function you edited by hand is never overwritten.
 - **Self-improving.** Mappings gain confidence when used consistently, decay when stale, and escalate fallbacks automatically.
 
 ---
@@ -26,14 +26,14 @@ Most "Figma-to-code" tools treat Figma as the source of truth and emit hardcoded
 
 ## Install
 
-Clone into your Claude Code plugins directory:
+The repo is its own plugin marketplace:
 
 ```bash
-git clone https://github.com/nguyenbahung94/FigmaToCompose.git \
-  ~/.claude/plugins/figma-to-compose
+claude plugin marketplace add nguyenbahung94/FigmaToCompose
+claude plugin install figma-to-compose@figma-to-compose
 ```
 
-Or clone anywhere and register the path in your Claude Code plugin settings. Restart Claude Code so the `/figma-to-compose` command and skills are discovered.
+Working from a local clone instead: `claude plugin marketplace add /path/to/FigmaToCompose`. After editing the clone, bump `version` in `.claude-plugin/plugin.json` and `marketplace.json`, then run `claude plugin marketplace update figma-to-compose` and `claude plugin update figma-to-compose@figma-to-compose`. Restart Claude Code so the `/figma-to-compose` command and skills are discovered.
 
 ---
 
@@ -87,10 +87,9 @@ Or clone anywhere and register the path in your Claude Code plugin settings. Res
 
 ## What you get
 
-Generated code is wrapped in stable markers so re-runs are safe:
+Generated code has no markers or comments. Re-run state lives in `.claude/figma-to-compose/generated.json`:
 
 ```kotlin
-// <figma-generated id="ProductCard.header" hash="a3f9c2">
 @Composable
 private fun ProductCardHeader(title: String) {
     Text(
@@ -100,7 +99,6 @@ private fun ProductCardHeader(title: String) {
         modifier = Modifier.padding(16.dp),
     )
 }
-// </figma-generated>
 ```
 
 - Colors → `colorResource(R.color.*)` from your `colors.xml`
@@ -152,7 +150,7 @@ Figma URL
   |  Stage 5  Layout IR Build         platform-agnostic intent tree
   |  Stage 6  Codegen                 IR -> Jetpack Compose (or SwiftUI)
   |  Stage 7  Confidence Gate         auto dry-run if avg < 0.70
-  |  Stage 8  Incremental Write       marker-based, safe on re-run
+  |  Stage 8  Incremental Write       manifest-based, safe on re-run
   v  Stage 9  Mapping Lifecycle       decay stale, boost consistent
 ```
 
