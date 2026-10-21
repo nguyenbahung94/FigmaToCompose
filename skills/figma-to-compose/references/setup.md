@@ -267,10 +267,11 @@ Output:
 Run: `/figma-to-compose inspect <figma-url>`
 
 ```
-Runs Stages 1–5 (Fetch → Normalize → Token Extract → Screen Detection → IR Build)
+Runs Stages 1–5 (Fetch → Normalize → Token Extract → Screen Detection → Existing UI Check → IR Build)
 Does NOT run Stage 6 (Generator) — no files written.
 
 Output:
+  Stage 3.5 block: Existing UI, Mode, covered / new sections, Change list
   Layout Map (spatial ASCII tree from Stage 1)
   Token Resolution log:
     ✓ #0066CC → color.brand-primary (token-mapping.json exact match)

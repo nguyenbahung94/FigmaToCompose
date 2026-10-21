@@ -59,6 +59,8 @@ The plugin reads project-local config first. Run `/figma-to-compose init` to gen
 /figma-to-compose generate <url>    ← dumb: always generates, no confidence decision logic
 ```
 
+**Flags (for `inspect` / `run` / `generate`):** `--target <path>` (existing UI file) and `--mode new|extend|modify` (override Stage 3.5).
+
 **Flags (for `run` / `generate` only — not compatible with `--layout-map`):**
 - `--dry-run`: Full pipeline, print IR + mapping, do NOT write files
 - `--allow-write-low-confidence`: Bypass auto dry-run gate (avg_confidence < 0.70) ONLY.
@@ -91,6 +93,11 @@ The plugin reads project-local config first. Run `/figma-to-compose init` to gen
 **Before the first call:** load the Figma `figma-design-to-code` skill (`/figma-design-to-code`, fallback `skill://figma/figma-design-to-code/SKILL.md`). The Figma MCP requires it before `get_design_context`.
 
 **Call:** `get_design_context(nodeId, fileKey)` — call ONCE per URL, cache result for session.
+
+The owner of this pipeline asks for the node tree, not Code Connect output. So:
+- Response is a Code Connect prompt with no node tree or texts → call again once with `disableCodeConnect: true`.
+- Response is metadata only because the node is large → call again once with `forceCode: true`.
+- Still no texts → `get_metadata` for the layer tree; texts and Stage 3.5 text evidence are UNAVAILABLE (Stage 3.5 reports UNKNOWN, never NEW by default).
 
 **URL parsing:**
 - `figma.com/design/<fileKey>/<name>?node-id=<nodeId>` → convert `-` to `:` in nodeId
@@ -182,11 +189,15 @@ For each gap, padding value (in dp):
 
 ```
 For each text node:
+  First round fontWeight to the nearest 100 (590 → 600; SF Pro semibold is 590).
   Match by ALL three criteria (all must pass — partial match not accepted):
     1. fontSize exact match
     2. fontWeight exact match
     3. lineHeight within 10% of token lineHeight
-  If any criterion fails → FAIL, report to user:
+  No exact match → closest token with fontSize within 1px AND fontWeight within 100:
+    use it, log WARN "approximate typography <figma> → <token>", list it in the report.
+  In a Stage 3.5 Change list, a mismatch is a row (Figma raw value + closest token), never a FAIL.
+  Still nothing → FAIL, report to user:
     "Typography mismatch: Figma uses fontSize=X, fontWeight=Y, lineHeight=Z.
      No token in token-mapping.json matches all three criteria.
      Option A: Add entry to token-mapping.json under 'typography.*' key.
@@ -230,7 +241,7 @@ Rule 4 (default):
 - Reusable full-width card → instance count ≥ 2 → Rule 2 → COMPONENT ✓
 - Nested large frame → fails Rule 1 + 2 → Rule 3 applies
 
-**Output paths:**
+**Output paths (NEW mode only, see Stage 3.5):**
 
 SCREEN:
 ```
@@ -248,6 +259,109 @@ COMPONENT:
 ```
 
 Feature/component name = Figma node name in PascalCase (spaces, slashes removed).
+
+---
+
+## Stage 3.5: Existing UI Check (NEW / EXTEND / MODIFY)
+
+Runs on every `inspect`, `run` and `generate`. Never skipped. Decides whether this design is a new UI,
+a new part of an existing UI, or a change to an existing UI. Codegen depends on the answer.
+
+### Find the code that renders this node
+
+```
+Texts that count (static copy only):
+  EXCLUDE platform chrome: nodes inside an instance or frame named Status bar, Home indicator,
+    Keyboard, Notch, Navigation bar / Tab bar from a platform UI kit (iOS or Android system kit)
+  EXCLUDE sample data:
+    - text with no letters, or matching a time (9:41), date (Mon 12 May, 12/05), duration or
+      relative time (15 min, 2h, 15 minutes ago), price, count or email
+    - weekday and month names, their abbreviations and initials (Monday, Mon, M, April, Apr):
+      code builds these from the locale
+    - inside repeated siblings with the same layer structure (list rows, cards): every text that
+      differs between the copies is record data; only texts equal in all copies stay static
+    - a person or place name that appears only once in the file
+  What remains = the static copy.
+
+Evidence, strongest first:Evidence, strongest first:
+  1. Manifest: generated.json has entries for this node id → that file (normal Stage 8 re-run, stop here)
+  2. Text: each static text → string resource with the same value in the strings files
+     (case- and whitespace-insensitive; a %s / %1$s placeholder matches any run of words)
+     → every file that references that resource (R.string.<name>, @string/<name>, stringResource)
+  3. Components: instances mapped in component-mapping.json → files that call those composables
+  4. Name: split the frame name on "/", "->", "-", "—"; each part and the first part alone, in PascalCase.
+     Generic names ("Frame 4081", "Group 12", "Screen") carry no name evidence: use the names of its
+     top-level children and component instances instead (mapped or not), e.g. "Week strip" → WeekStrip
+     ("Orders -> All -> Populated" → "Orders", "OrdersAll"); match `fun <Name>(`, `<Name>Fragment`,
+     `<Name>Screen`, layout `fragment_<snake>` / `layout_<snake>`, and package directory names (orders/)
+  5. `--target <path>` given → that file or directory, score 1.0
+
+A UI is a FEATURE UNIT, not one file: group every file that has evidence by its feature package
+(the first directory under the presentation root that holds it, e.g. .../orders/). Score each unit:
+
+score(unit) = 0.6 * static texts found anywhere in the unit / static texts
+            + 0.3 * mapped instances called in the unit / mapped instances in node (none → 0.5)
+            + 0.1 * name match on any file or the package name (0 or 1)
+Existing UI = best unit with score ≥ 0.50. Its entry file = the unit file that declares the
+screen-level composable, Fragment or layout (most evidence on a tie).
+Two units ≥ 0.50 within 0.10 → AMBIGUOUS: list both, write nothing. Pass --target <path>.
+NEW requires STRONG evidence of absence: ≥ 3 static texts, none found in any unit, and no name or
+  component match. Anything weaker with no unit ≥ 0.50 → UNKNOWN: write nothing, list every unit
+  with any evidence (text, component or name), best first, and in `inspect` print a PROVISIONAL
+  Change list against the best one. Confirm with --target <path> or --mode. Never NEW by default.
+```
+
+### Decide the mode
+
+```
+section = each direct child of the node (after Stage 1 normalization)
+covered(section) = at least one of its static texts or mapped instances was found in the existing UI unit,
+  OR it has the same layer structure as a covered section (repeated card or row = covered once),
+  OR its only differences from the code are values (text, color, size): those become Change list rows
+A section with no static text and no mapped instance is judged by name match only; no match → left out
+  of the percentage.
+
+NEW     → no existing UI
+MODIFY  → existing UI found and ≥ 80% of sections covered
+EXTEND  → existing UI found and < 80% of sections covered (a new section = new structure that
+          has no counterpart in code, never a repeat or a text change)
+--mode new|extend|modify overrides the decision; log WARN "Mode forced: <mode>"
+```
+
+### What each mode does
+
+```
+NEW     → full pipeline (Stages 4-9), output paths from Stage 3.
+EXTEND  → generate ONLY the uncovered sections, each as its own @Composable in a new file
+          in the existing UI's package; add manifest entries. Never edit existing files.
+          Report the call site: "Call <Fn>(...) in <file> between <section above> and <section below>".
+          Existing UI is layout XML → still generate the composable; report "host in a ComposeView
+          at <file>:<line>, or rebuild the section in XML".
+MODIFY  → write NO code. Emit the Change list below. The caller edits the existing file.
+          A file already listed in generated.json is not MODIFY: Stage 8 re-runs it.
+```
+
+### Change list (MODIFY, and the covered sections of EXTEND)
+
+```
+One row per difference between Figma and the existing code. Equal values are not listed.
+| Section / node | Property | Figma (resolved token) | Code now | file:line |
+Properties compared: text, color token, typography token, padding / spacing token, size,
+corner radius, child order, child visibility, component used.
+Figma values go through Stage 2 first, so both sides are tokens, never raw hex or px.
+Code value not found → "not found" (never guess). New color needed → mark "add resource" (Stage 2 step 3).
+```
+
+### Output (always printed)
+
+```
+Existing UI: <package> → entry <file> (score 0.82: 9/11 static texts, 2/2 components, name match)
+Excluded texts: <n chrome, n sample data>
+Mode: MODIFY | EXTEND | NEW | AMBIGUOUS | UNKNOWN
+Covered sections: <names>
+New sections: <names>            (EXTEND)
+Change list: <N rows>            (MODIFY / EXTEND)
+```
 
 ---
 
@@ -738,6 +852,7 @@ Write updated `component-mapping.json` at end of run.
 | Situation | Action |
 |---|---|
 | First time using | Run `bootstrap` first |
+| UI already exists in code | Stage 3.5 → MODIFY: change list, no codegen. New section → EXTEND: new composable + call site |
 | Low confidence (<0.70) | Auto dry-run — review mapping, then re-run |
 | Unknown component | Fallback.Minor → WARN+Box / Fallback.Major+root → BLOCK |
 | Token not in mapping | Lookup colors.xml → auto-add if found. Not there either → add to colors.xml, list in report. |

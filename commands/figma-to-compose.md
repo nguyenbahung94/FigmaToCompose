@@ -1,5 +1,5 @@
 ---
-description: Figma → Jetpack Compose pipeline. Subcommands: init, bootstrap, validate, inspect, run, generate, review-mappings, suggest-mapping, cleanup-orphans, ci. Flags: --layout-map, --dry-run, --allow-write-low-confidence, --verbose.
+description: Figma → Jetpack Compose pipeline. Subcommands: init, bootstrap, validate, inspect, run, generate, review-mappings, suggest-mapping, cleanup-orphans, ci. Flags: --layout-map, --dry-run, --allow-write-low-confidence, --verbose, --target <path>, --mode new|extend|modify.
 ---
 
 Invoke the `figma-to-compose` skill to handle this request.
@@ -15,7 +15,7 @@ Parse `$ARGUMENTS` and route to the skill stages as follows:
 | `init` | Stage 0: scan design system, generate `.claude/figma-to-compose/config.json` + `mappings/token-mapping.json` |
 | `bootstrap [<url>]` | Stage 0.5: scan `@Composable` functions in the project, seed `mappings/component-mapping.json` |
 | `validate` | Verify `config.json` + mappings are well-formed and reference real files |
-| `inspect <url>` | Stages 1-5: fetch Figma node, show IR tree + token resolution + mapping decisions (no codegen) |
+| `inspect <url>` | Stages 1-5: fetch Figma node, decide NEW / EXTEND / MODIFY against existing code, show change list, IR tree, token resolution, mapping decisions (no codegen) |
 | `<url> --layout-map` | Spatial ASCII tree of the Figma frame (no codegen) |
 | `review-mappings` | Walk pending component mappings, prompt for confirm/reject |
 | `suggest-mapping` | List unmapped Figma components with suggested Compose component matches |
